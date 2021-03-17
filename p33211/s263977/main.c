@@ -5,7 +5,6 @@
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/stat.h>
 #include <limits.h>
 #include <semaphore.h>
 #include <stdbool.h>
@@ -32,7 +31,6 @@ typedef struct {
 } write_args;
 
 typedef struct {
-    char* filename;
     int number;
 
 } aggregate_args;
@@ -86,6 +84,8 @@ char* generate_filename(int number) {
     snprintf(str_number, 10, "%d", number + 1);
     strcat(filename, str_number);
 
+    free(str_number);
+
     return filename;
 }
 
@@ -105,10 +105,8 @@ void write_in_files(char* address) {
     int i;
     int last_size = A % E * 1024 * 1024;
     int count = (A * 1024 * 1024 - last_size) / E / 1024 / 1024;
-    pthread_t* threads;
-    write_args* args;
-    threads = (pthread_t*) malloc((count + 1) * sizeof(pthread_t));
-    args = (write_args*) malloc((count + 1) * sizeof(write_args));
+    pthread_t threads[count + 1];
+    write_args args[count + 1];
     printf("start writing...\n");
     for (i = 0; i < count; i++) {
         args[i].address = address;
@@ -158,12 +156,8 @@ void start_aggregate_threads(const int files_count) {
     pthread_t threads[I];
     printf("starting aggregating threads...\n");
     for (i = 0; i < I; i++) {// I
-        int file_number = i % files_count;
-        char* filename = generate_filename(file_number);
         args[i].number = i + 1;
-        args[i].filename = filename;
         pthread_create(&threads[i], NULL, aggregate_data, (void*) &args[i]);
-
     }
 }
 
@@ -173,28 +167,32 @@ int main(void) {
     }
 
     for (int i = 0; i < 2; i++) {
-        fds[i] = open(generate_filename(i), O_RDWR | O_CREAT | O_TRUNC, (mode_t) 0600);
+        char * filename = generate_filename(i);
+        fds[i] = open(filename, O_RDWR | O_CREAT | O_TRUNC, (mode_t) 0600);
+        free(filename);
     }
     printf("before allocation\n");
     getchar();
-  //  bool is_aggregate_start = false;
+    bool is_aggregate_start = false;
     const int last_size = A % E * 1024 * 1024;
     file_count = (A * 1024 * 1024 - last_size) / E / 1024 / 1024 + 1;
 
     while (1) {
         char* address = allocate_memory();
         printf("after allocation\n");
-        printf("starting allocating memory address %p\n", (void*)address);
+        printf("starting allocating memory address: %p\n",(void*)address);
         getchar();
         fill_memory(address);
         printf("after filling memory\n");
-
+    
+        char ch;
+        while ((ch = getchar()) != '\n' && ch != EOF);
         getchar();
 
         write_in_files(address);
-  	//if (!is_aggregate_start)
-  	start_aggregate_threads(file_count);
-        //is_aggregate_start = true;
+        if (!is_aggregate_start) start_aggregate_threads(file_count);
+        is_aggregate_start = true;
+        printf("%p", address);
         munmap(address, A * 1024 * 1024);
         printf("after deallocation\n");
         getchar();
